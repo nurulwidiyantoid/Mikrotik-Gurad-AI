@@ -1,0 +1,5 @@
+{
+  "name": "MikroTik AI Guardian",
+  "description": "A smart monitoring application that not only displays data and status from MikroTik RouterBoard devices but also proactively analyzes, provides recommendations, and suggests preventive actions with the help of Google's Gemini AI. This app transforms network administration from reactive to proactive and predictive.",
+  "requestFramePermissions": []
+}
