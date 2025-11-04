@@ -14,9 +14,9 @@ export interface UseMikrotikApi {
 }
 
 const MOCK_API_CREDENTIALS = {
-    host: '192.168.88.1',
-    user: 'admin',
-    pass: '' // Assuming empty password for default mock
+    host: '103.172.204.153:8728',
+    user: 'apiuser',
+    pass: 'bismillah123' // Assuming empty password for default mock
 };
 
 export const useMikrotikApi = (): UseMikrotikApi => {
