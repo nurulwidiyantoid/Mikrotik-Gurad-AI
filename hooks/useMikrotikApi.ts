@@ -1,104 +1,145 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
+interface Credentials {
+    host: string;
+    user: string;
+    pass: string;
+}
+
+const defaultCredentials: Credentials = {
+    host: '',
+    user: '',
+    pass: ''
+};
+
 export interface UseMikrotikApi {
-    credentials: { host: string; user: string; pass: string; };
     connectionStatus: ConnectionStatus;
     isConfigured: boolean;
     error: string | null;
+    credentials: Credentials;
     saveCredentials: (host: string, user: string, pass: string) => void;
-    testConnection: (host: string, user: string, pass: string) => void;
-    disconnect: () => void;
+    testConnection: (host: string, user: string, pass: string) => Promise<boolean>;
+    reportConnectionLost: () => void;
 }
 
-const MOCK_API_CREDENTIALS = {
-    host: '103.172.204.153:8728',
-    user: 'apiuser',
-    pass: 'bismillah123'
+const getStoredCredentials = (): Credentials => {
+    try {
+        const stored = localStorage.getItem('mikrotikApiCredentials');
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.host && parsed.user) {
+                return parsed;
+            }
+        }
+    } catch (e) {
+        console.error("Failed to parse credentials from localStorage", e);
+    }
+    return defaultCredentials;
 };
 
 export const useMikrotikApi = (): UseMikrotikApi => {
-    const [credentials, setCredentials] = useState({ host: '', user: '', pass: '' });
+    const [credentials, setCredentials] = useState<Credentials>(getStoredCredentials);
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
     const [error, setError] = useState<string | null>(null);
-    const [isConfigured, setIsConfigured] = useState<boolean>(false);
+    const [retryAttempt, setRetryAttempt] = useState(0);
+    const retryTimerRef = useRef<number | null>(null);
 
-    useEffect(() => {
-        try {
-            const savedCreds = localStorage.getItem('mikrotik-api-creds');
-            if (savedCreds) {
-                const parsedCreds = JSON.parse(savedCreds);
-                setCredentials(parsedCreds);
-                setIsConfigured(true);
-                // Auto-test connection on load if configured
-                testConnection(parsedCreds.host, parsedCreds.user, parsedCreds.pass);
-            } else {
-                setIsConfigured(false);
-                setConnectionStatus('disconnected');
-            }
-        } catch (e) {
-            console.error("Failed to load credentials from localStorage", e);
-            setIsConfigured(false);
+    const isConfigured = !!(credentials.host && credentials.user);
+
+    const clearRetryTimer = () => {
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
         }
-    }, []);
+    };
 
-    const saveCredentials = useCallback((host: string, user: string, pass: string) => {
-        const newCreds = { host, user, pass };
-        setCredentials(newCreds);
-        setIsConfigured(!!host && !!user);
-        try {
-            localStorage.setItem('mikrotik-api-creds', JSON.stringify(newCreds));
-            // After saving new credentials, try to connect
-            testConnection(host, user, pass);
-        } catch (e) {
-            console.error("Failed to save credentials to localStorage", e);
-        }
-    }, []);
-
-    const testConnection = useCallback((host: string, user: string, pass: string) => {
+    const connect = useCallback((creds: Credentials, isTest: boolean = false): Promise<boolean> => {
         setConnectionStatus('connecting');
         setError(null);
+        clearRetryTimer();
 
         // --- MOCK API CALL ---
-        // In a real application, this would be a call to a backend service
-        // that attempts to connect to the MikroTik router.
-        setTimeout(() => {
-            if (!host || !user) {
-                setError("Host and Username cannot be empty.");
-                setConnectionStatus('error');
-                return;
-            }
-
-            if (host === MOCK_API_CREDENTIALS.host && user === MOCK_API_CREDENTIALS.user && pass === MOCK_API_CREDENTIALS.pass) {
-                setConnectionStatus('connected');
-            } else {
-                setError("Authentication failed. Please check your credentials.");
-                setConnectionStatus('error');
-            }
-        }, 1000);
+        return new Promise<boolean>((resolve) => {
+            setTimeout(() => {
+                if (creds.host && creds.user) { // Password can be blank for some setups
+                    console.log(`Attempting to connect to ${creds.host}...`);
+                    setConnectionStatus('connected');
+                    if (!isTest) setRetryAttempt(0);
+                    resolve(true);
+                } else {
+                    const errorMsg = "Host and username are required.";
+                    setError(errorMsg);
+                    setConnectionStatus('error');
+                    resolve(false);
+                }
+            }, 1000);
+        });
     }, []);
     
-    const disconnect = useCallback(() => {
-        try {
-            localStorage.removeItem('mikrotik-api-creds');
-        } catch (e) {
-            console.error("Failed to remove credentials from localStorage", e);
+    useEffect(() => {
+        if (retryAttempt > 0) {
+            const delay = Math.min(1000 * 2 ** (retryAttempt - 1), 30000); // Exponential backoff up to 30s
+            setError(`Connection lost. Retrying in ${delay / 1000}s...`);
+            
+            retryTimerRef.current = window.setTimeout(async () => {
+                const success = await connect(credentials);
+                if (!success) {
+                    setRetryAttempt(prev => prev + 1);
+                }
+            }, delay);
         }
-        setCredentials({ host: '', user: '', pass: '' });
-        setConnectionStatus('disconnected');
-        setError(null);
-        setIsConfigured(false);
-    }, []);
+
+        return clearRetryTimer;
+    }, [retryAttempt, credentials, connect]);
+    
+    useEffect(() => {
+        // Auto-connect on initial load if credentials exist
+        if (isConfigured) {
+            connect(credentials);
+        } else {
+            setConnectionStatus('disconnected');
+            setError("API credentials are not configured.");
+        }
+    }, []); // Run only on initial mount
+
+    const saveCredentials = useCallback((host: string, user: string, pass: string) => {
+        const newCredentials = { host, user, pass };
+        try {
+            localStorage.setItem('mikrotikApiCredentials', JSON.stringify(newCredentials));
+        } catch(e) {
+            console.error("Failed to save credentials to localStorage", e);
+        }
+        setCredentials(newCredentials);
+        setRetryAttempt(0); // Reset retry on new credentials
+        connect(newCredentials);
+    }, [connect]);
+
+    const testConnection = useCallback(async (host: string, user: string, pass: string): Promise<boolean> => {
+        setRetryAttempt(0);
+        clearRetryTimer();
+        return connect({host, user, pass}, true);
+    }, [connect]);
+
+    const reportConnectionLost = useCallback(() => {
+        if (connectionStatus !== 'connected') return; // Only report if was previously connected
+        
+        setConnectionStatus('error');
+        if (retryAttempt === 0) {
+            setRetryAttempt(1); // Start the retry cycle
+        }
+    }, [connectionStatus, retryAttempt]);
+
 
     return {
-        credentials,
         connectionStatus,
         isConfigured,
         error,
+        credentials,
         saveCredentials,
         testConnection,
-        disconnect
+        reportConnectionLost,
     };
 };

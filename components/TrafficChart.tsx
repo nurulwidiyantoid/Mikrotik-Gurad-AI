@@ -8,6 +8,20 @@ interface TrafficChartProps {
   traffic: InterfaceTraffic[];
 }
 
+const ThresholdInput: React.FC<{id: string; label: string; value: number; onChange: (val: number) => void}> = ({id, label, value, onChange}) => (
+    <div className="flex items-center space-x-2">
+        <label htmlFor={id} className="text-gray-400 font-medium text-xs">{label}:</label>
+        <input
+            id={id}
+            type="number"
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="w-16 bg-gray-900/50 border border-gray-600 rounded-md px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-primary/80 text-sm"
+        />
+    </div>
+);
+
+
 const TrafficChart: React.FC<TrafficChartProps> = ({ traffic }) => {
   const [liveData, setLiveData] = useState<InterfaceTraffic[]>(traffic);
   const [rxThreshold, setRxThreshold] = useState(450);
@@ -38,8 +52,8 @@ const TrafficChart: React.FC<TrafficChartProps> = ({ traffic }) => {
         const rxFluctuation = (Math.random() - 0.5) * 2 * (originalItem.rx * fluctuationPercent);
         const txFluctuation = (Math.random() - 0.5) * 2 * (originalItem.tx * fluctuationPercent);
         
-        const newRx = Math.max(0, Math.round(originalItem.rx + rxFluctuation));
-        const newTx = Math.max(0, Math.round(originalItem.tx + txFluctuation));
+        const newRx = Math.max(0, Math.round(originalItem.rx + txFluctuation));
+        const newTx = Math.max(0, Math.round(originalItem.tx + rxFluctuation));
 
         if (newRx > rxThreshold) rxBreachedInInterval = true;
         if (newTx > txThreshold) txBreachedInInterval = true;
@@ -61,34 +75,19 @@ const TrafficChart: React.FC<TrafficChartProps> = ({ traffic }) => {
   };
   
   const isBreached = isRxBreached || isTxBreached;
-  const cardClassName = `p-4 h-96 flex flex-col transition-all duration-300 ${isBreached ? 'border-danger animate-pulse-border' : 'border-gray-700'}`;
+  const cardClassName = `p-4 h-96 flex flex-col`;
 
   return (
     <Card className={cardClassName}>
-      <div className="flex flex-wrap gap-2 justify-between items-center mb-4">
+      <div className={`flex flex-wrap gap-2 justify-between items-center mb-4 p-2 rounded-lg transition-colors duration-300 ${isBreached ? 'bg-danger/10' : ''}`}>
         <h3 className="flex items-center text-lg font-semibold text-white">
           Live Traffic
           {isBreached && <ExclamationTriangleIcon className="h-5 w-5 ml-2 text-danger animate-pulse" />}
         </h3>
-        <div className="flex items-center space-x-2 text-sm">
-            <label htmlFor="rx-threshold" className="text-gray-400 font-medium">DL Threshold:</label>
-            <input
-                id="rx-threshold"
-                type="number"
-                value={rxThreshold}
-                onChange={(e) => setRxThreshold(Number(e.target.value))}
-                className="w-16 bg-gray-900 border border-gray-600 rounded-md px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-primary/80"
-            />
-            <span className="text-gray-500">Mbps</span>
-            <label htmlFor="tx-threshold" className="text-gray-400 font-medium ml-2">UL Threshold:</label>
-            <input
-                id="tx-threshold"
-                type="number"
-                value={txThreshold}
-                onChange={(e) => setTxThreshold(Number(e.target.value))}
-                className="w-16 bg-gray-900 border border-gray-600 rounded-md px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-primary/80"
-            />
-             <span className="text-gray-500">Mbps</span>
+        <div className="flex items-center space-x-4 text-sm bg-gray-900/50 border border-gray-700 rounded-lg p-1">
+            <ThresholdInput id="rx-threshold" label="DL Threshold" value={rxThreshold} onChange={setRxThreshold} />
+            <div className="h-4 w-px bg-gray-600"></div>
+            <ThresholdInput id="tx-threshold" label="UL Threshold" value={txThreshold} onChange={setTxThreshold} />
         </div>
       </div>
       <ResponsiveContainer width="100%" height="100%">

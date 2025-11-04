@@ -9,14 +9,14 @@ import LogViewer from './LogViewer';
 import AiAnalysis from './AiAnalysis';
 import HistoricalTrafficChart from './HistoricalTrafficChart';
 import DeviceList from './DeviceList';
-import { CpuIcon, MemoryIcon, UsersIcon, StorageIcon, StatusOnlineIcon, ClockIcon, CogIcon } from './icons';
+import { CpuIcon, MemoryIcon, UsersIcon, StorageIcon, StatusOnlineIcon, ClockIcon, ExclamationTriangleIcon } from './icons';
 
 interface DashboardProps {
   isConnected: boolean;
-  onConfigureClick: () => void;
+  reportConnectionLost: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ isConnected, onConfigureClick }) => {
+const Dashboard: React.FC<DashboardProps> = ({ isConnected, reportConnectionLost }) => {
   const [data, setData] = useState<MikrotikData | null>(null);
   const [devices, setDevices] = useState<MikroTikDevice[]>([]);
   const [historicalData24h, setHistoricalData24h] = useState<HistoricalDataPoint[]>([]);
@@ -42,6 +42,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isConnected, onConfigureClick }) 
     } catch (err) {
       setError('Failed to fetch MikroTik data.');
       console.error(err);
+      reportConnectionLost();
     } finally {
       setLoading(false);
     }
@@ -62,7 +63,6 @@ const Dashboard: React.FC<DashboardProps> = ({ isConnected, onConfigureClick }) 
   };
 
   useEffect(() => {
-    // FIX: Changed NodeJS.Timeout to number for browser compatibility.
     let interval: number | undefined;
     if (isConnected) {
       fetchData();
@@ -101,18 +101,15 @@ const Dashboard: React.FC<DashboardProps> = ({ isConnected, onConfigureClick }) 
     }
   };
 
-  if (!isConnected) {
+  if (!isConnected && !error) {
     return (
-      <div className="flex flex-col justify-center items-center h-96 text-center bg-gray-800 rounded-lg border-2 border-dashed border-gray-700">
-        <h2 className="text-2xl font-semibold text-white mb-2">Not Connected to a Router</h2>
-        <p className="text-gray-400 mb-6 max-w-md">Please configure your MikroTik API credentials to start monitoring your device.</p>
-        <button
-          onClick={onConfigureClick}
-          className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-primary"
-        >
-          <CogIcon className="h-5 w-5 mr-2" />
-          Go to Settings
-        </button>
+      <div className="flex flex-col justify-center items-center h-[60vh] text-center bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-700">
+        <ExclamationTriangleIcon className="h-12 w-12 text-warning mb-4" />
+        <h2 className="text-2xl font-semibold text-white mb-2">Connection Unavailable</h2>
+        <p className="text-gray-400 max-w-md">
+          Could not connect to the MikroTik router. The application will attempt to reconnect automatically.
+          Please ensure the router is online and the API configuration is correct.
+        </p>
       </div>
     );
   }
@@ -121,12 +118,12 @@ const Dashboard: React.FC<DashboardProps> = ({ isConnected, onConfigureClick }) 
     return (
       <div className="flex justify-center items-center h-64">
         <StatusOnlineIcon className="h-12 w-12 text-primary animate-pulse" />
-        <span className="ml-4 text-xl">Connecting to Router...</span>
+        <span className="ml-4 text-xl font-medium">Connecting to Router...</span>
       </div>
     );
   }
 
-  if (error && !data) {
+  if (error && !data && !isConnected) {
     return <div className="text-center text-danger text-xl p-8">{error}</div>;
   }
   
@@ -135,16 +132,15 @@ const Dashboard: React.FC<DashboardProps> = ({ isConnected, onConfigureClick }) 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-4 justify-between items-center">
-        <h2 className="text-2xl font-semibold text-primary">{data.identity}</h2>
+        <h2 className="text-3xl font-bold text-white tracking-tight">{data.identity}</h2>
         {lastUpdated && <p className="text-sm text-gray-400">Last updated: {lastUpdated.toLocaleTimeString()}</p>}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-6">
-        <MetricCard title="CPU Load" value={`${data.cpuLoad}%`} icon={<CpuIcon />} status={data.cpuLoad > 80 ? 'danger' : data.cpuLoad > 50 ? 'warning' : 'success'} />
-        <MetricCard title="Memory" value={`${data.memoryUsage}%`} subtitle={`${(data.totalMemory * (data.memoryUsage / 100)).toFixed(1)} / ${data.totalMemory} GB`} icon={<MemoryIcon />} status={data.memoryUsage > 85 ? 'danger' : data.memoryUsage > 60 ? 'warning' : 'success'} />
-        <MetricCard title="Disk" value={`${data.diskUsage}%`} subtitle={`${(data.totalDisk * (data.diskUsage / 100)).toFixed(1)} / ${data.totalDisk} GB`} icon={<StorageIcon />} status={data.diskUsage > 90 ? 'danger' : data.diskUsage > 75 ? 'warning' : 'success'} />
-        <MetricCard title="Active Users" value={data.activeUsers.toString()} icon={<UsersIcon />} />
-        <MetricCard title="Uptime" value={data.uptime} icon={<ClockIcon />} />
-        <MetricCard title="Status" value="Online" icon={<StatusOnlineIcon />} status="success" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+        <MetricCard title="CPU Load" value={data.cpuLoad} unit="%" icon={<CpuIcon />} />
+        <MetricCard title="Memory" value={data.memoryUsage} unit="%" subtitle={`${(data.totalMemory * (data.memoryUsage / 100)).toFixed(1)}/${data.totalMemory}GB`} icon={<MemoryIcon />} />
+        <MetricCard title="Disk" value={data.diskUsage} unit="%" subtitle={`${(data.totalDisk * (data.diskUsage / 100)).toFixed(1)}/${data.totalDisk}GB`} icon={<StorageIcon />} />
+        <MetricCard title="Active Users" value={data.activeUsers} icon={<UsersIcon />} />
+        <MetricCard title="Uptime" value={data.uptime} icon={<ClockIcon />} isStatus={true} />
       </div>
 
       <DeviceList devices={devices} />
